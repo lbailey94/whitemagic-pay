@@ -7,4 +7,4 @@ session pass caching, and receipt extraction for WhiteMagic and x402-enabled end
 from .client import X402Client, wrap_session
 
 __all__ = ["X402Client", "wrap_session"]
-__version__ = "0.1.0"
+__version__ = "0.1.1"
