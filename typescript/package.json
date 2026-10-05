@@ -1,0 +1,55 @@
+{
+  "name": "whitemagic-pay",
+  "version": "0.1.0",
+  "description": "Autonomous x402 payment client, session lease caching, and Proof-of-Context notarization for AI agents.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "x402",
+    "agent",
+    "payments",
+    "usdc",
+    "base",
+    "eip-3009",
+    "notarization",
+    "whitemagic",
+    "mcp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lbailey94/whitemagic-pay.git"
+  },
+  "homepage": "https://www.whitemagic.dev/hosted",
+  "peerDependencies": {
+    "viem": ">=2"
+  },
+  "peerDependenciesMeta": {
+    "viem": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "viem": "^2.21.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}

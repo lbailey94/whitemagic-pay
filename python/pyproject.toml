@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whitemagic-pay"
+version = "0.1.0"
+description = "Autonomous x402 payment client, session pass caching, and context notarization SDK for AI agents."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    {name = "WhiteMagic Labs", email = "contact@whitemagic.dev"}
+]
+keywords = ["x402", "agent", "payments", "usdc", "base", "whitemagic", "eip-3009", "notarization"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.optional-dependencies]
+signing = [
+    "eth-account>=0.11.0",
+]
+
+[project.scripts]
+whitemagic-pay = "whitemagic_pay.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["whitemagic_pay*"]
