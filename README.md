@@ -57,6 +57,39 @@ Both clients also support `notarize_context` / `notarizeContext` for
 Proof-of-Context receipts (timestamped, signed attestations binding an agent's
 prompt digest, recalled context, model, and action).
 
+## Framework Integrations
+
+Native plug-and-play packages for leading autonomous agent frameworks with zero-friction uncollateralized compute advances (`X-WM-Auto-Advance: 1`) and EIP-3009 gasless settlement:
+
+| Integration | Framework | Features | Location |
+| :--- | :--- | :--- | :--- |
+| **`@whitemagic/agentkit-action-whitemagic`** | [Coinbase AgentKit](https://github.com/coinbase/agentkit) | TypeScript & Python action providers for `recall_memory`, `acquire_advance`, and `arbitrate_mutex` | [`integrations/agentkit/`](integrations/agentkit/) |
+| **`@whitemagic/plugin-whitemagic`** | [ElizaOS (ai16z)](https://github.com/elizaos/eliza) | Automatic cross-session context memory provider & Cho-Han swarm locking | [`integrations/elizaos/`](integrations/elizaos/) |
+
+### Coinbase AgentKit Example
+```typescript
+import { AgentKit, ViemWalletProvider } from "@coinbase/agentkit";
+import { WhiteMagicActionProvider } from "@whitemagic/agentkit-action-whitemagic";
+
+const whitemagic = new WhiteMagicActionProvider({ autoAdvance: true });
+const agentKit = await AgentKit.from({
+  walletProvider: wallet,
+  actionProviders: [whitemagic],
+});
+```
+
+### Proof-of-Context Notarization (Agent Audit Trail)
+Certify what your agent knew and evaluated before executing high-stakes actions:
+```python
+attestation = client.notarize_context(
+    prompt_digest="sha256:...",
+    memory_digest="sha256:...",
+    model="gpt-4o",
+    action_digest="sha256:...",
+)
+# Returns an RFC 8785 Ed25519 canonical receipt verifiable at api.whitemagic.dev/verify
+```
+
 ## Links
 
 - Hosted lanes and x402 quickstart: https://www.whitemagic.dev/hosted

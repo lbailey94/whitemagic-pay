@@ -1,0 +1,23 @@
+{
+  "name": "@whitemagic/plugin-whitemagic",
+  "version": "0.1.0",
+  "description": "ElizaOS plugin for WhiteMagic persistent cross-session memory, nano-credit compute advances, and Cho-Han lock arbitration.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "elizaos",
+    "eliza",
+    "plugin",
+    "agent",
+    "memory",
+    "whitemagic",
+    "mcp",
+    "x402"
+  ],
+  "author": "WhiteMagic Labs",
+  "license": "MIT"
+}

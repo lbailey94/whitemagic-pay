@@ -1,0 +1,34 @@
+{
+  "name": "@whitemagic/agentkit-action-whitemagic",
+  "version": "0.1.0",
+  "description": "WhiteMagic persistent memory recall, nano-credit advances, and Cho-Han lock arbitration for Coinbase AgentKit.",
+  "main": "dist/action_provider.js",
+  "types": "dist/action_provider.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "agentkit",
+    "coinbase",
+    "whitemagic",
+    "memory",
+    "mcp",
+    "x402",
+    "base"
+  ],
+  "author": "WhiteMagic Labs",
+  "license": "MIT",
+  "dependencies": {
+    "whitemagic-pay": "file:../../ts",
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "@coinbase/agentkit": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@coinbase/agentkit": {
+      "optional": true
+    }
+  }
+}
