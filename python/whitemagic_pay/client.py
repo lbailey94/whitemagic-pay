@@ -24,6 +24,8 @@ except ImportError:
 
 CHAIN_MAP = {
     "eip155:8453": 8453,        # Base Mainnet
+    "eip155:42161": 42161,      # Arbitrum One
+    "eip155:137": 137,          # Polygon PoS
     "eip155:84532": 84532,      # Base Sepolia Testnet
     "eip155:1": 1,              # Ethereum Mainnet
 }
@@ -46,8 +48,10 @@ class X402Client:
     def __init__(
         self,
         private_key: Optional[str] = None,
-        preferred_tier: str = "task",  # "call" ($0.002), "task" ($0.01), "swarm" ($0.05), "day" ($0.50)
+        preferred_tier: str = "task",  # "call" ($0.001), "task" ($0.01), "swarm" ($0.05), "day" ($0.50)
+        preferred_network: Optional[str] = None,  # e.g. "eip155:8453", "eip155:42161", "eip155:137"
         auto_lease: bool = True,
+        auto_advance: bool = False,
     ):
         self.account = None
         if private_key:
@@ -57,7 +61,9 @@ class X402Client:
                 )
             self.account = Account.from_key(private_key)
         self.preferred_tier = preferred_tier
+        self.preferred_network = preferred_network
         self.auto_lease = auto_lease
+        self.auto_advance = auto_advance
         self.cached_pass: Optional[str] = None
         self.pass_expires_at: float = 0.0
         self.pass_tier: str = ""
@@ -83,25 +89,33 @@ class X402Client:
             raise ValueError("Challenge contains no 'accepts' requirements.")
 
         chosen_tier = tier or self.preferred_tier
-        # Tier pricing mapping in atomic units (USDC has 6 decimals)
-        tier_price_map = {
-            "call": 2000,       # $0.002
-            "task": 10000,      # $0.010
-            "swarm": 50000,     # $0.050
-            "day": 500000,      # $0.500
+        # Tier pricing mapping in atomic units (USDC has 6 decimals; call supports $0.001 and legacy $0.002)
+        tier_price_candidates = {
+            "call": (1000, 2000),
+            "task": (10000,),
+            "swarm": (50000,),
+            "day": (500000,),
         }
-        target_amount = tier_price_map.get(chosen_tier)
+        target_amounts = tier_price_candidates.get(chosen_tier, ())
+
+        pool = accepts
+        if self.preferred_network:
+            net_matches = [c for c in accepts if c.get("network") == self.preferred_network]
+            if net_matches:
+                pool = net_matches
 
         req = None
-        if target_amount is not None:
-            for cand in accepts:
-                if int(cand.get("amount", 0)) == target_amount:
+        for amt in target_amounts:
+            for cand in pool:
+                if int(cand.get("amount", 0)) == amt:
                     req = cand
                     break
+            if req is not None:
+                break
 
         if req is None:
             # Fallback to lowest acceptable amount
-            req = min(accepts, key=lambda a: int(a.get("amount", 999999999)))
+            req = min(pool, key=lambda a: int(a.get("amount", 999999999)))
 
         network = req.get("network", "eip155:8453")
         chain_id = CHAIN_MAP.get(network)
@@ -170,6 +184,8 @@ class X402Client:
         if self.is_pass_active():
             req_headers["Authorization"] = f"Bearer {self.cached_pass}"
             req_headers["X-Session-Pass"] = self.cached_pass
+        elif self.auto_advance and "X-WM-Auto-Advance" not in req_headers:
+            req_headers["X-WM-Auto-Advance"] = "1"
 
         body_bytes = None
         if data is not None:

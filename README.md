@@ -13,17 +13,16 @@ holds the two client packages agents use to pay and to notarize context:
 | `whitemagic-pay` (Python) | [PyPI](https://pypi.org/project/whitemagic-pay/) | [`python/`](python/) |
 | `whitemagic-pay` (TypeScript) | [npm](https://www.npmjs.com/package/whitemagic-pay) | [`typescript/`](typescript/) |
 
-## Tiers
+## Tiers (Base, Arbitrum One & Polygon PoS)
 
 | Tier | Price (USDC) | Atomic units | Duration | Best for |
 | :--- | :--- | :--- | :--- | :--- |
-| `call` | $0.002 | 2,000 | 60 s | Single tool call, health probe |
+| `call` | $0.001 | 1,000 | 60 s | Single tool call, health probe, micro-tolling |
 | `task` | $0.010 | 10,000 | 300 s | Standard multi-step task |
 | `swarm` | $0.050 | 50,000 | 900 s | Multi-agent coordination |
 | `day` | $0.500 | 500,000 | 86,400 s | Continuous production worker |
 
-A free 10-minute trial pass is available from the faucet with no wallet; the
-libraries claim it with one call and reuse the returned session pass.
+Supported x402 settlement networks: **Base (`eip155:8453`)**, **Arbitrum One (`eip155:42161`)**, and **Polygon PoS (`eip155:137`)**. Cold-start agents without a wallet can also pass `auto_advance=True` (`X-WM-Auto-Advance: 1`) for an instant $0.05 compute advance or claim a 10-minute trial pass from `/faucet`.
 
 ## Quickstarts
 

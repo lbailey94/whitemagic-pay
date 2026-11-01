@@ -40,10 +40,10 @@ client = X402Client(
 status, result, headers = client.request("POST", "https://mcp.whitemagic.dev/mcp", data={...})
 ```
 
-#### Multi-Tier Pricing Menu
+#### Multi-Tier Pricing Menu (Base, Arbitrum One & Polygon PoS)
 | Tier | Price (USDC) | Atomic Units | Duration | Best For |
 | :--- | :--- | :--- | :--- | :--- |
-| **`call`** | **$0.002** | 2,000 | 60s (1 min) | Single tool invocation, health probe, sanity check |
+| **`call`** | **$0.001** | 1,000 | 60s (1 min) | Single tool invocation, health probe, micro-tolling |
 | **`task`** | **$0.010** | 10,000 | 300s (5 min) | Standard multi-step reasoning task |
 | **`swarm`** | **$0.050** | 50,000 | 900s (15 min) | Multi-agent swarm coordination, deep research |
 | **`day`** | **$0.500** | 500,000 | 86,400s (24h) | Continuous production agent worker |

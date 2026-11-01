@@ -27,7 +27,9 @@ export interface X402Challenge {
 export interface X402ClientOptions {
   privateKey?: string;
   preferredTier?: Tier;
+  preferredNetwork?: string;
   autoLease?: boolean;
+  autoAdvance?: boolean;
 }
 
 export interface X402Response {
@@ -46,12 +48,14 @@ export interface NotarizeInput {
 
 const CHAIN_MAP: Record<string, number> = {
   "eip155:8453": 8453,
+  "eip155:42161": 42161,
+  "eip155:137": 137,
   "eip155:84532": 84532,
   "eip155:1": 1,
 };
 
 export const TIER_PRICES: Record<Tier, number> = {
-  call: 2000,
+  call: 1000,
   task: 10000,
   swarm: 50000,
   day: 500000,
@@ -121,14 +125,18 @@ async function loadSigner(privateKey: string): Promise<Signer> {
 export class X402Client {
   private signerPromise: Promise<Signer> | null = null;
   private preferredTier: Tier;
+  private preferredNetwork?: string;
   private autoLease: boolean;
+  private autoAdvance: boolean;
   private cachedPass: string | null = null;
   private passExpiresAt = 0;
   private passTier = "";
 
   constructor(options: X402ClientOptions = {}) {
     this.preferredTier = options.preferredTier ?? "task";
+    this.preferredNetwork = options.preferredNetwork;
     this.autoLease = options.autoLease !== false;
+    this.autoAdvance = Boolean(options.autoAdvance);
     if (options.privateKey) {
       this.signerPromise = loadSigner(options.privateKey);
     }
@@ -200,9 +208,16 @@ export class X402Client {
 
     const chosenTier = tier ?? this.preferredTier;
     const targetAmount = TIER_PRICES[chosenTier];
-    let req = accepts.find((c) => Number(c.amount) === targetAmount);
+    const netFiltered = this.preferredNetwork
+      ? accepts.filter((c) => c.network === this.preferredNetwork)
+      : [];
+    const pool = netFiltered.length > 0 ? netFiltered : accepts;
+    let req = pool.find((c) => Number(c.amount) === targetAmount);
+    if (!req && chosenTier === "call") {
+      req = pool.find((c) => Number(c.amount) === 2000);
+    }
     if (!req) {
-      req = accepts.reduce((min, c) => (Number(c.amount) < Number(min.amount) ? c : min));
+      req = pool.reduce((min, c) => (Number(c.amount) < Number(min.amount) ? c : min));
     }
 
     const network = req.network ?? "eip155:8453";
@@ -264,6 +279,8 @@ export class X402Client {
     if (this.isPassActive() && this.cachedPass) {
       reqHeaders["Authorization"] = `Bearer ${this.cachedPass}`;
       reqHeaders["X-Session-Pass"] = this.cachedPass;
+    } else if (this.autoAdvance && !reqHeaders["X-WM-Auto-Advance"]) {
+      reqHeaders["X-WM-Auto-Advance"] = "1";
     }
 
     const body =

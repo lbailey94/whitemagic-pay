@@ -8,7 +8,7 @@
  * 4. Cho-Han Mutex Arbitration — zero-deadlock provably fair multi-agent lock contention.
  */
 import { z } from "zod";
-import { X402Client } from "../../ts/dist/index.js";
+import { X402Client } from "../../typescript/dist/index.js";
 // Action Schemas
 export const RecallMemorySchema = z.object({
     query: z.string().describe("The search query to recall cross-session memories or knowledge context"),

@@ -66,11 +66,11 @@ const res = await client.fetch("https://mcp.whitemagic.dev/mcp", {
 });
 ```
 
-### Tier menu
+### Tier menu (Base, Arbitrum One & Polygon PoS)
 
 | Tier | Price (USDC) | Atomic units | Duration | Best for |
 | :--- | :--- | :--- | :--- | :--- |
-| `call` | $0.002 | 2,000 | 60 s | Single tool call, health probe |
+| `call` | $0.001 | 1,000 | 60 s | Single tool call, health probe, micro-tolling |
 | `task` | $0.010 | 10,000 | 300 s | Standard multi-step task |
 | `swarm` | $0.050 | 50,000 | 900 s | Multi-agent coordination |
 | `day` | $0.500 | 500,000 | 86,400 s | Continuous production worker |

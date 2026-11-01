@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import { X402Client, Tier } from "../../ts/dist/index.js";
+import { X402Client, Tier } from "../../typescript/dist/index.js";
 
 // Action Schemas
 export const RecallMemorySchema = z.object({
