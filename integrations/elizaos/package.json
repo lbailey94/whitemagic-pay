@@ -19,5 +19,15 @@
     "x402"
   ],
   "author": "WhiteMagic Labs",
-  "license": "MIT"
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lbailey94/whitemagic-pay.git",
+    "directory": "integrations/elizaos"
+  },
+  "homepage": "https://www.whitemagic.dev/hosted"
 }
