@@ -1,0 +1,34 @@
+name: Offline client policy
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: PYTHONPATH=python python -m unittest discover -s python/tests -v
+  typescript:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - run: npm ci --ignore-scripts --prefix typescript
+      - run: npm test --prefix typescript
+      - name: Build structural integration examples against this candidate
+        run: |
+          npm install --ignore-scripts --no-save --package-lock=false ./typescript zod@4.6.6 --prefix integrations/agentkit
+          npm install --ignore-scripts --no-save --package-lock=false ./typescript --prefix integrations/elizaos
+          npm run build --prefix integrations/agentkit
+          npm run build --prefix integrations/elizaos
+          node --test integrations/tests/*.test.mjs

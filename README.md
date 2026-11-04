@@ -1,98 +1,129 @@
 # whitemagic-pay
 
-Autonomous x402 payment client, session lease caching, and cryptographic
-Proof-of-Context notarization for AI agents. No API key, no account: a client
-that negotiates HTTP 402 challenges, signs EIP-3009 gasless permits on Base,
-caches session leases, and retries.
+Python and TypeScript x402 transport clients with caller-owned signing authority and
+origin-scoped opaque session leases. This tree is the **0.2.0 candidate**; it has not
+been published. Existing registry versions do not contain these changes.
 
-WhiteMagic's hosted lanes meter with x402 (USDC on Base). This repository
-holds the two client packages agents use to pay and to notarize context:
+A 402 offer does not authorize a spend. No offer is signed without an explicit
+origin/rail/asset/payee/domain grant, exact allowed amount and remaining authorization
+budget. Preferred tier/network select among authorized offers; they never widen a grant.
 
-| Package | Registry | Source |
-| :--- | :--- | :--- |
-| `whitemagic-pay` (Python) | [PyPI](https://pypi.org/project/whitemagic-pay/) | [`python/`](python/) |
-| `whitemagic-pay` (TypeScript) | [npm](https://www.npmjs.com/package/whitemagic-pay) | [`typescript/`](typescript/) |
+## Policy-governed requests
 
-## Tiers (Base, Arbitrum One & Polygon PoS)
-
-| Tier | Price (USDC) | Atomic units | Duration | Best for |
-| :--- | :--- | :--- | :--- | :--- |
-| `call` | $0.001 | 1,000 | 60 s | Single tool call, health probe, micro-tolling |
-| `task` | $0.010 | 10,000 | 300 s | Standard multi-step task |
-| `swarm` | $0.050 | 50,000 | 900 s | Multi-agent coordination |
-| `day` | $0.500 | 500,000 | 86,400 s | Continuous production worker |
-
-Supported x402 settlement networks: **Base (`eip155:8453`)**, **Arbitrum One (`eip155:42161`)**, and **Polygon PoS (`eip155:137`)**. Cold-start agents without a wallet can also pass `auto_advance=True` (`X-WM-Auto-Advance: 1`) for an instant $0.05 compute advance or claim a 10-minute trial pass from `/faucet`.
-
-## Quickstarts
-
-Python:
-
-```bash
-pip install whitemagic-pay
-```
+From a checkout, build/install the local candidate in an isolated environment. Paid
+Python signing additionally needs `eth-account`; TypeScript uses optional `viem`.
+Use your own independently confirmed origin, token contract and recipient below.
+The example addresses are placeholders; they are not WhiteMagic payment instructions.
 
 ```python
-from whitemagic_pay import X402Client
+import os
+from whitemagic_pay import SpendGrant, X402Client
 
-client = X402Client(private_key="0x...", preferred_tier="task")
-status, data, headers = client.request("POST", "https://mcp.whitemagic.dev/mcp", data={...})
-```
-
-TypeScript:
-
-```bash
-npm install whitemagic-pay
-```
-
-```ts
-import { X402Client } from "whitemagic-pay";
-
-const client = new X402Client({ privateKey: process.env.AGENT_WALLET_KEY as `0x${string}` });
-const { status, data } = await client.request("POST", "https://mcp.whitemagic.dev/mcp", { ... });
-```
-
-Both clients also support `notarize_context` / `notarizeContext` for
-Proof-of-Context receipts (timestamped, signed attestations binding an agent's
-prompt digest, recalled context, model, and action).
-
-## Framework Integrations
-
-Native plug-and-play packages for leading autonomous agent frameworks with zero-friction uncollateralized compute advances (`X-WM-Auto-Advance: 1`) and EIP-3009 gasless settlement:
-
-| Integration | Framework | Features | Location |
-| :--- | :--- | :--- | :--- |
-| **`@whitemagic/agentkit-action-whitemagic`** | [Coinbase AgentKit](https://github.com/coinbase/agentkit) | TypeScript & Python action providers for `recall_memory`, `acquire_advance`, and `arbitrate_mutex` | [`integrations/agentkit/`](integrations/agentkit/) |
-| **`@whitemagic/plugin-whitemagic`** | [ElizaOS (ai16z)](https://github.com/elizaos/eliza) | Automatic cross-session context memory provider & Cho-Han swarm locking | [`integrations/elizaos/`](integrations/elizaos/) |
-
-### Coinbase AgentKit Example
-```typescript
-import { AgentKit, ViemWalletProvider } from "@coinbase/agentkit";
-import { WhiteMagicActionProvider } from "@whitemagic/agentkit-action-whitemagic";
-
-const whitemagic = new WhiteMagicActionProvider({ autoAdvance: true });
-const agentKit = await AgentKit.from({
-  walletProvider: wallet,
-  actionProviders: [whitemagic],
-});
-```
-
-### Proof-of-Context Notarization (Agent Audit Trail)
-Certify what your agent knew and evaluated before executing high-stakes actions:
-```python
-attestation = client.notarize_context(
-    prompt_digest="sha256:...",
-    memory_digest="sha256:...",
-    model="gpt-4o",
-    action_digest="sha256:...",
+grant = SpendGrant(
+    origin="https://issuer.example", network="eip155:8453",
+    asset="0x1111111111111111111111111111111111111111",
+    pay_to="0x2222222222222222222222222222222222222222",
+    allowed_amounts=("10000",), max_total_amount="20000",
 )
-# Returns an RFC 8785 Ed25519 canonical receipt verifiable at api.whitemagic.dev/verify
+client = X402Client(private_key=os.environ["AGENT_WALLET_KEY"],
+                    preferred_tier="task", preferred_network="eip155:8453",
+                    spend_grants=[grant])
+# Explicit action, potentially authorizing funds; run only against your chosen service.
+# status, data, headers = client.request("POST", "https://issuer.example/mcp", data=payload)
 ```
 
-## Links
+```typescript
+import { X402Client } from "whitemagic-pay";
+const client = new X402Client({
+  privateKey: process.env.AGENT_WALLET_KEY,
+  preferredTier: "task", preferredNetwork: "eip155:8453",
+  spendGrants: [{
+    origin: "https://issuer.example", network: "eip155:8453",
+    asset: "0x1111111111111111111111111111111111111111",
+    payTo: "0x2222222222222222222222222222222222222222",
+    allowedAmounts: ["10000"], maxTotalAmount: "20000",
+  }],
+});
+// await client.request("POST", "https://issuer.example/mcp", payload);
+```
 
-- Hosted lanes and x402 quickstart: https://www.whitemagic.dev/hosted
-- Receipt spec and verifiers: https://www.whitemagic.dev/receipts
-- WhiteMagic core: https://github.com/lbailey94/whitemagic
+Atomic values must be positive uint256 integers. Decimal strings preserve exact values;
+TypeScript rejects unsafe numeric inputs and signs bigint fields. The selected tier
+must match a known atomic amount (`call`: 1000 or legacy 2000, `task`: 10000,
+`swarm`: 50000, `day`: 500000). Prices/durations at a particular service must be
+confirmed separately; these constants are selectors, not a live rate-card guarantee.
+
+`max_total_amount` / `maxTotalAmount` counts authorizations reserved in this client
+instance, including ambiguous signer failures. It is **not a persistent wallet,
+settlement, per-day, or multi-process budget**. An operator that needs those limits
+must enforce them in wallet custody/persistent storage. Recreating a client resets it.
+There is no generic cheapest-offer fallback and no implicit network/recipient trust.
+
+## Lease, redirect and retry contract
+
+- Tokens are kept in memory by exact issuing origin (scheme, host and port), with
+  the supplied positive expiry capped at one day. A token for MCP is not forwarded
+  to an API host or another agent's client. No cross-origin audience is inferred.
+- Caller authorization/payment headers take precedence and suppress SDK paid retry.
+- Redirects are returned without following them, including after payment signing.
+  Explicitly choose a new destination and grant rather than forwarding secrets.
+- At most one automatic retry follows a valid 402; the request body is preserved.
+  No retry occurs after transport failure, 5xx or an ambiguous paid response. Host
+  applications need their own operation idempotency contract; HTTP 200 alone does
+  not establish RPC success or payment settlement.
+- `auto_lease=False` / `autoLease:false` disables automatic 402 signing, pass
+  caching/reuse and auto-advance headers. Explicit signing remains policy-governed.
+- `auto_advance=True` / `autoAdvance:true` is an explicit opt-in to a service's advance
+  mechanism. It is false by default; availability and borrowing terms are not
+  established by this library. Faucet/advance calls change service state.
+- HTTPS is required except for explicit localhost/loopback test URLs. Challenge
+  resource URL, including path/query, must equal the requested URL.
+
+`session_status(url)` / `sessionStatus(url)` returns metadata, never the bearer.
+An explicitly acquired token can be adopted with `adopt_session_pass` /
+`adoptSessionPass`, its issuing URL and actual expiry. Do not print tokens into an
+agent/tool transcript. The CLI reads keys/tokens from named environment variables
+and redacts credential fields. `wrap_session` is a limited requests-style hook;
+it is not an httpx adapter and does not cache leases.
+
+## Notarization
+
+```python
+# attestation = client.notarize_context(
+#     base_url="https://api.whitemagic.dev",
+#     context_digest="sha256:...", prompt_hash="sha256:...",
+#     action="agent.action", model="chosen-model", metadata={"run": "example"},
+# )
+```
+
+TypeScript uses `notarizeContext({contextDigest, promptHash, action, model, metadata})`.
+A signed attestation binds the stated bytes; it does not certify the model's actual
+knowledge, the truth of the source or execution of an action.
+
+## Framework examples
+
+`integrations/agentkit` and `integrations/elizaos` are **framework-neutral/structural
+examples**, not qualified plug-and-play integrations. They reuse the client, keep
+sessions per wallet/runtime, redact acquired tokens and recognize RPC/tool errors.
+Direct wallet settlement is disabled and arbitration is zero-stake only.
+
+A real Coinbase adapter needs the framework's `ActionProvider` and action registration
+API; an Eliza adapter must implement a pinned `@elizaos/core` contract. Neither full
+framework registration nor a hosted journey is claimed by these example tests.
+See [AgentKit's official provider guide](https://github.com/coinbase/agentkit/blob/main/typescript/agentkit/README.md)
+and [Eliza's plugin guide](https://eliza.how/core-concepts/plugins) before implementing
+that separate compatibility gate. No wallet key or paid flow is needed to run tests.
+
+## Offline verification
+
+```bash
+PYTHONPATH=python python3 -m unittest discover -s python/tests -v
+npm ci --ignore-scripts --prefix typescript
+npm test --prefix typescript
+```
+
+Tests use fake signers/transports, cover denied grants, concurrency/budgets, caller
+headers, two origins, expiry, redirect policy, exact body replay and RPC errors.
+They establish those local contracts, not real settlement or framework deployment.
 
 MIT — WhiteMagic Labs.

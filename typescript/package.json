@@ -1,6 +1,6 @@
 {
   "name": "whitemagic-pay",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Autonomous x402 payment client, session lease caching, and Proof-of-Context notarization for AI agents.",
   "license": "MIT",
   "type": "module",
@@ -50,6 +50,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "test": "npm run build && node --test test/*.test.mjs"
   }
 }
