@@ -1,8 +1,8 @@
 # whitemagic-pay
 
 Python and TypeScript x402 transport clients with caller-owned signing authority and
-origin-scoped opaque session leases. This tree is the **0.2.0 candidate**; it has not
-been published. Existing registry versions do not contain these changes.
+origin-scoped opaque session leases. **0.2.0 is published on PyPI and npm**; earlier
+registry versions do not contain these spending-policy and credential-scope fixes.
 
 A 402 offer does not authorize a spend. No offer is signed without an explicit
 origin/rail/asset/payee/domain grant, exact allowed amount and remaining authorization
@@ -10,7 +10,7 @@ budget. Preferred tier/network select among authorized offers; they never widen 
 
 ## Policy-governed requests
 
-From a checkout, build/install the local candidate in an isolated environment. Paid
+Install `whitemagic-pay==0.2.0` from PyPI or `whitemagic-pay@0.2.0` from npm in an isolated environment. Paid
 Python signing additionally needs `eth-account`; TypeScript uses optional `viem`.
 Use your own independently confirmed origin, token contract and recipient below.
 The example addresses are placeholders; they are not WhiteMagic payment instructions.
