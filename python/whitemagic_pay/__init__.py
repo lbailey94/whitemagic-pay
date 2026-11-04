@@ -1,10 +1,5 @@
-"""whitemagic_pay — zero-dependency Python client adapter for x402 autonomous payments.
-
-Handles automatic 402 challenge negotiation, EIP-3009 gasless authorization signing,
-session pass caching, and receipt extraction for WhiteMagic and x402-enabled endpoints.
-"""
-
+"""Explicit-policy x402 authorization and origin-scoped leases."""
 from .client import X402Client, wrap_session
-
-__all__ = ["X402Client", "wrap_session"]
-__version__ = "0.1.1"
+from .policy import SpendGrant
+__all__ = ["X402Client", "SpendGrant", "wrap_session"]
+__version__ = "0.2.0"

@@ -1,59 +1,22 @@
-# WhiteMagic Action Provider for Coinbase AgentKit
+# WhiteMagic transport examples for AgentKit hosts
 
-Zero-friction persistent memory recall, nano-credit compute advances, and Cho-Han lock arbitration for autonomous AI agents built on **Coinbase AgentKit**.
+This 0.2.0 candidate is **not** a registered Coinbase AgentKit `ActionProvider`.
+The TypeScript/Python classes expose methods that a host can explicitly register
+with its chosen, pinned framework API. Older plug-and-play examples were unsupported.
 
----
+`recallMemory`/`recall_memory`, explicit `acquireAdvance`/`acquire_advance`, and zero-stake
+arbitration use the origin-scoped client. Each wallet address has a separate client;
+acquired bearers are cached with actual expiry and never returned in method text.
+Advance borrowing is disabled unless the host explicitly selects `autoAdvance:true`
+(or Python `auto_advance=True`). Direct wallet settlement is disabled until a separate
+custody/authorization design and pinned framework integration are qualified.
 
-## Capabilities
+The Python file is a standalone example, not an importable `whitemagic_pay.integrations`
+package. Import it from the checked-out example directory. No fallback decorators
+or SDK-shaped stubs are provided to imply registration succeeded.
 
-1. **Persistent Memory Recall (`recall_memory`)**:
-   - Gives your AgentKit agent cross-session memory recall over `https://mcp.whitemagic.dev`.
-   - Supports in-band `X-WM-Auto-Advance: 1` so agents without initial funds can immediately recall knowledge.
-2. **Uncollateralized Nano-Credit (`acquire_advance`)**:
-   - Zero-friction compute advances ($0.05–$5.00) issued in-band without credit card or human KYC.
-3. **EIP-3009 Gasless Settlement (`settle_advance`)**:
-   - Repay advances seamlessly using the agent's native EVM wallet on Base USDC (`0x8335...2913`).
-4. **Cho-Han Mutex Arbitration (`arbitrate_mutex`)**:
-   - Multi-agent swarm lock contention arbitration with SHA-256 provable fairness and zero deadlocks.
-
----
-
-## Quickstart (TypeScript)
-
-```typescript
-import { AgentKit, ViemWalletProvider } from "@coinbase/agentkit";
-import { WhiteMagicActionProvider } from "./action_provider.js";
-
-// 1. Initialize Wallet Provider (Base Mainnet)
-const wallet = new ViemWalletProvider(...);
-
-// 2. Initialize WhiteMagic Action Provider
-const whitemagic = new WhiteMagicActionProvider({
-  baseUrl: "https://mcp.whitemagic.dev",
-  autoAdvance: true, // Auto-grants uncollateralized compute advance if unkeyed
-});
-
-// 3. Register Action Provider with AgentKit
-const agentKit = await AgentKit.from({
-  walletProvider: wallet,
-  actionProviders: [whitemagic],
-});
-
-// 4. Run your Agent
-// Agent can now autonomously invoke `recall_memory`, `acquire_advance`, or `arbitrate_mutex`!
-```
-
----
-
-## Quickstart (Python)
-
-```python
-from coinbase_agentkit import AgentKit
-from whitemagic_pay.integrations.agentkit.action_provider import WhiteMagicActionProvider
-
-# 1. Initialize Action Provider
-whitemagic = WhiteMagicActionProvider(auto_advance=True)
-
-# 2. Register with AgentKit
-agent_kit = AgentKit(action_providers=[whitemagic])
-```
+[Coinbase's official provider API](https://github.com/coinbase/agentkit/blob/main/typescript/agentkit/README.md)
+requires ActionProvider inheritance and registered actions; implement and test that
+against an explicitly selected release before using `AgentKit.from` with this adapter.
+Offline tests here cover transport/session contracts only. They do not use a wallet,
+contact a service, prove a lock or settle funds.

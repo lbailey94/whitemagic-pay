@@ -1,429 +1,280 @@
-/**
- * whitemagic-pay (TypeScript) — autonomous x402 payment client, session lease
- * caching, and Proof-of-Context notarization for AI agents.
- *
- * Mirrors the Python client's semantics: HTTP 402 challenge negotiation,
- * EIP-3009 TransferWithAuthorization signing (via the optional `viem`
- * dependency), session pass reuse, faucet claims, and context notarization.
- */
-
+/** x402 requests with explicit signing authority and origin-scoped opaque leases. */
 export type Tier = "call" | "task" | "swarm" | "day";
-
+export type AtomicAmount = string | number | bigint;
+export interface SpendGrant {
+  origin: string;
+  network: string;
+  asset: string;
+  payTo: string;
+  allowedAmounts: readonly AtomicAmount[];
+  maxTotalAmount: AtomicAmount;
+  domainName?: string;
+  domainVersion?: string;
+}
 export interface X402Accept {
+  scheme: string;
   network: string;
   asset: string;
   amount: string | number;
   payTo: string;
   extra?: { name?: string; version?: string };
 }
-
 export interface X402Challenge {
-  x402Version?: number;
-  resource?: string;
+  x402Version: number;
+  resource: string | { url: string };
   accepts: X402Accept[];
   extensions?: Record<string, unknown>;
 }
-
 export interface X402ClientOptions {
   privateKey?: string;
   preferredTier?: Tier;
   preferredNetwork?: string;
   autoLease?: boolean;
   autoAdvance?: boolean;
+  spendGrants?: readonly SpendGrant[];
 }
-
 export interface X402Response {
   status: number;
   data: Record<string, unknown>;
   headers: Record<string, string>;
 }
-
 export interface NotarizeInput {
-  contextDigest?: string;
-  promptHash?: string;
-  action?: string;
-  model?: string;
-  metadata?: Record<string, unknown>;
+  contextDigest?: string; promptHash?: string; action?: string;
+  model?: string; metadata?: Record<string, unknown>;
 }
-
 const CHAIN_MAP: Record<string, number> = {
-  "eip155:8453": 8453,
-  "eip155:42161": 42161,
-  "eip155:137": 137,
-  "eip155:84532": 84532,
-  "eip155:1": 1,
+  "eip155:8453": 8453, "eip155:42161": 42161, "eip155:137": 137,
+  "eip155:84532": 84532, "eip155:1": 1,
 };
+export const TIER_PRICES: Record<Tier, number> = { call: 1000, task: 10000, swarm: 50000, day: 500000 };
+const CREDENTIALS = ["authorization", "x-session-pass", "payment-signature"];
+const EIP3009_TYPES = { TransferWithAuthorization: [
+  {name:"from", type:"address"}, {name:"to", type:"address"}, {name:"value", type:"uint256"},
+  {name:"validAfter", type:"uint256"}, {name:"validBefore", type:"uint256"}, {name:"nonce", type:"bytes32"},
+]} as const;
 
-export const TIER_PRICES: Record<Tier, number> = {
-  call: 1000,
-  task: 10000,
-  swarm: 50000,
-  day: 500000,
-};
-
-const EIP3009_TYPES = {
-  TransferWithAuthorization: [
-    { name: "from", type: "address" },
-    { name: "to", type: "address" },
-    { name: "value", type: "uint256" },
-    { name: "validAfter", type: "uint256" },
-    { name: "validBefore", type: "uint256" },
-    { name: "nonce", type: "bytes32" },
-  ],
-} as const;
-
-function b64encode(text: string): string {
-  const g = globalThis as unknown as {
-    btoa?: (s: string) => string;
-    Buffer?: { from: (s: string, e?: string) => { toString: (e: string) => string } };
-  };
-  if (typeof g.btoa === "function") return g.btoa(text);
-  if (g.Buffer) return g.Buffer.from(text, "utf8").toString("base64");
-  throw new Error("No base64 encoder available in this runtime.");
+export function atomicAmount(value: unknown): bigint {
+  if (typeof value === "number" && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw new Error("amount number must be a positive safe integer; use a decimal string");
+  }
+  if (!(["string", "number", "bigint"].includes(typeof value)) || !/^[1-9][0-9]*$/.test(String(value))) {
+    throw new Error("amount must be a positive decimal integer");
+  }
+  const amount = BigInt(value as string | number | bigint);
+  if (amount >= 1n << 256n) throw new Error("amount exceeds uint256");
+  return amount;
 }
-
-function b64decode(text: string): string {
-  const g = globalThis as unknown as {
-    atob?: (s: string) => string;
-    Buffer?: { from: (s: string, e?: string) => { toString: (e: string) => string } };
-  };
-  if (typeof g.atob === "function") return g.atob(text);
-  if (g.Buffer) return g.Buffer.from(text, "base64").toString("utf8");
-  throw new Error("No base64 decoder available in this runtime.");
+function resourceUrl(input: string): URL {
+  const url = new URL(input);
+  if (url.username || url.password || url.hash) throw new Error("URL credentials/fragments are forbidden");
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost","127.0.0.1","[::1]"].includes(url.hostname))) {
+    throw new Error("HTTPS is required except explicit loopback URLs");
+  }
+  return url;
 }
-
+function address(value: unknown): string {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error("explicit EVM address required");
+  return value.toLowerCase();
+}
+function b64encode(text: string): string { return btoa(text); }
+function b64decode(text: string): string { return atob(text); }
 function randomNonce(): string {
-  const bytes = new Uint8Array(32);
-  const cryptoObj = globalThis.crypto as { getRandomValues?: (a: Uint8Array) => Uint8Array } | undefined;
-  if (cryptoObj?.getRandomValues) {
-    cryptoObj.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-  }
-  return "0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  if (!globalThis.crypto?.getRandomValues) throw new Error("secure randomness is required for payment authorizations");
+  return "0x" + Array.from(crypto.getRandomValues(new Uint8Array(32)), b=>b.toString(16).padStart(2,"0")).join("");
 }
-
-interface Signer {
-  address: string;
-  signTypedData(args: Record<string, unknown>): Promise<string>;
+interface Signer { address: string; signTypedData(args: Record<string, unknown>): Promise<string>; }
+interface Grant {
+  origin: string; network: string; asset: string; payTo: string; allowed: readonly bigint[];
+  max: bigint; name: string; version: string;
 }
-
-async function loadSigner(privateKey: string): Promise<Signer> {
-  let accounts: { privateKeyToAccount: (key: string) => Signer };
-  try {
-    accounts = (await import("viem/accounts")) as unknown as {
-      privateKeyToAccount: (key: string) => Signer;
-    };
-  } catch {
-    throw new Error(
-      "The paid path requires the optional `viem` dependency. Install it with: npm install viem",
-    );
-  }
-  return accounts.privateKeyToAccount(privateKey);
+interface Lease { token: string; tier: string; expiresAt: number; }
+async function loadSigner(key: string): Promise<Signer> {
+  const accounts = await import("viem/accounts");
+  return accounts.privateKeyToAccount(key as `0x${string}`) as unknown as Signer;
 }
 
 export class X402Client {
   private signerPromise: Promise<Signer> | null = null;
-  private preferredTier: Tier;
-  private preferredNetwork?: string;
-  private autoLease: boolean;
-  private autoAdvance: boolean;
-  private cachedPass: string | null = null;
-  private passExpiresAt = 0;
-  private passTier = "";
+  private readonly preferredTier: Tier;
+  private readonly preferredNetwork?: string;
+  private readonly autoLease: boolean;
+  private readonly autoAdvance: boolean;
+  private readonly grants: readonly Grant[];
+  private readonly spent: bigint[];
+  private readonly passes = new Map<string, Lease>();
 
   constructor(options: X402ClientOptions = {}) {
     this.preferredTier = options.preferredTier ?? "task";
+    if (!(this.preferredTier in TIER_PRICES)) throw new Error("unsupported tier");
     this.preferredNetwork = options.preferredNetwork;
     this.autoLease = options.autoLease !== false;
-    this.autoAdvance = Boolean(options.autoAdvance);
-    if (options.privateKey) {
-      this.signerPromise = loadSigner(options.privateKey);
-    }
-  }
-
-  /** The payer address, when a private key was provided. */
-  public async address(): Promise<string | null> {
-    if (!this.signerPromise) return null;
-    return (await this.signerPromise).address;
-  }
-
-  public isPassActive(): boolean {
-    return Boolean(this.cachedPass && Date.now() < this.passExpiresAt - 5000);
-  }
-
-  public get pass(): { token: string | null; tier: string; expiresAt: number } {
-    return { token: this.cachedPass, tier: this.passTier, expiresAt: this.passExpiresAt };
-  }
-
-  /** Claim a 10-minute trial session pass from the hosted faucet (no wallet). */
-  public async claimFaucet(baseUrl = "https://mcp.whitemagic.dev"): Promise<Record<string, unknown>> {
-    const address = await this.address();
-    const res = await this.raw("POST", `${baseUrl.replace(/\/$/, "")}/faucet`, {
-      payer: address ?? "agent",
+    this.autoAdvance = options.autoAdvance === true;
+    this.grants = (options.spendGrants ?? []).map(g => {
+      const url = resourceUrl(g.origin);
+      if (url.pathname !== "/" || url.search) throw new Error("grant origin cannot contain path/query");
+      const name = g.domainName ?? "USD Coin", version = g.domainVersion ?? "2";
+      if (!g.allowedAmounts.length || !name || !version) throw new Error("grant requires amounts and token domain");
+      return Object.freeze({origin:url.origin,network:g.network,asset:address(g.asset),payTo:address(g.payTo),
+        allowed:Object.freeze(g.allowedAmounts.map(atomicAmount)),max:atomicAmount(g.maxTotalAmount),name,version});
     });
-    const data = res.data as { session_pass?: string; expires_in?: number };
-    if (data.session_pass) {
-      this.cachedPass = data.session_pass;
-      this.passExpiresAt = Date.now() + Number(data.expires_in ?? 600) * 1000;
-      this.passTier = "faucet";
-    }
-    return res.data;
+    this.spent = this.grants.map(()=>0n);
+    if (options.privateKey) this.signerPromise = loadSigner(options.privateKey);
   }
 
-  /** Request a Proof-of-Context notarization from the hosted API lane. */
-  public async notarizeContext(
-    input: NotarizeInput,
-    baseUrl = "https://api.whitemagic.dev",
-  ): Promise<Record<string, unknown>> {
-    const payload: Record<string, unknown> = {};
-    if (input.contextDigest) payload.context_digest = input.contextDigest;
-    if (input.promptHash) payload.prompt_hash = input.promptHash;
-    if (input.action) payload.action = input.action;
-    if (input.model) payload.model = input.model;
-    if (input.metadata) payload.metadata = input.metadata;
-    const address = await this.address();
-    if (address) payload.agent_id = address;
-
-    const res = await this.request("POST", `${baseUrl.replace(/\/$/, "")}/notarize`, payload);
-    if (res.status !== 200) {
-      throw new Error(`Notarization failed with status ${res.status}: ${JSON.stringify(res.data)}`);
-    }
-    return res.data;
+  public async address(): Promise<string | null> { return this.signerPromise ? (await this.signerPromise).address : null; }
+  public isPassActive(url = "https://mcp.whitemagic.dev"): boolean {
+    const origin = resourceUrl(url).origin, pass = this.passes.get(origin);
+    if (pass && Date.now() < pass.expiresAt - 5000) return true;
+    this.passes.delete(origin);
+    return false;
+  }
+  /** Metadata only: lease secrets must not enter agent/tool transcripts. */
+  public sessionStatus(url = "https://mcp.whitemagic.dev") {
+    const active = this.isPassActive(url), origin = resourceUrl(url).origin, pass = this.passes.get(origin);
+    return {active,origin,tier:pass?.tier,expiresAt:pass?.expiresAt};
+  }
+  public adoptSessionPass(url: string, token: string, expiresIn: AtomicAmount, tier = "session"): void {
+    const origin = resourceUrl(url).origin;
+    if (!this.autoLease) return;
+    if (typeof token !== "string" || !token || /[\r\n]/.test(token)) throw new Error("invalid session token");
+    const seconds = atomicAmount(expiresIn);
+    if (seconds > 86400n) throw new Error("session lifetime exceeds one day");
+    this.passes.set(origin,{token,tier,expiresAt:Date.now()+Number(seconds)*1000});
   }
 
-  /** Build a signed EIP-3009 payment payload from an x402 challenge. */
-  public async createPaymentPayload(
-    challenge: X402Challenge,
-    tier?: Tier,
-  ): Promise<{ payment: Record<string, unknown>; header: string }> {
-    if (!this.signerPromise) {
-      throw new Error("No private key provided to X402Client to sign the payment challenge.");
+  private selectOffer(challenge: X402Challenge, requestUrl: string, tier: Tier) {
+    const requested = resourceUrl(requestUrl);
+    const resource = typeof challenge.resource === "string" ? challenge.resource : challenge.resource?.url;
+    if (typeof resource !== "string" || resourceUrl(resource).href !== requested.href) throw new Error("challenge resource mismatch");
+    if (![1,2].includes(challenge.x402Version) || !Number.isInteger(challenge.x402Version)) throw new Error("unsupported x402 version");
+    if (!Array.isArray(challenge.accepts) || !challenge.accepts.length) throw new Error("nonempty accepts required");
+    if (!(tier in TIER_PRICES)) throw new Error("unsupported tier");
+    const eligible: {req: X402Accept; amount: bigint; index: number}[] = [];
+    for (const req of challenge.accepts) {
+      if (!req || typeof req !== "object") throw new Error("invalid offer");
+      const amount = atomicAmount(req.amount);
+      if (!Object.hasOwn(CHAIN_MAP, req.network) || req.scheme !== "exact") continue;
+      const asset = address(req.asset), payTo = address(req.payTo);
+      if (req.extra !== undefined && (req.extra === null || typeof req.extra !== "object" || Array.isArray(req.extra))) {
+        throw new Error("invalid token domain");
+      }
+      const extra = req.extra ?? {};
+      const name = extra.name ?? "USD Coin", version = extra.version ?? "2";
+      if (typeof name !== "string" || typeof version !== "string") throw new Error("invalid token domain");
+      if (this.preferredNetwork && req.network !== this.preferredNetwork) continue;
+      if (amount !== BigInt(TIER_PRICES[tier]) && !(tier === "call" && amount === 2000n)) continue;
+      this.grants.forEach((g,index)=> {
+        if (g.origin === requested.origin && g.network === req.network && g.asset === asset && g.payTo === payTo &&
+            g.name === name && g.version === version && g.allowed.includes(amount) && this.spent[index]+amount <= g.max) {
+          eligible.push({req,amount,index});
+        }
+      });
     }
+    eligible.sort((a,b)=>a.amount < b.amount ? -1 : a.amount > b.amount ? 1 : a.index-b.index);
+    if (!eligible.length) throw new Error("no offer satisfies spending grant, tier and remaining budget");
+    return eligible[0];
+  }
+
+  public async createPaymentPayload(challenge: X402Challenge, tier?: Tier, requestUrl?: string) {
+    if (!this.signerPromise) throw new Error("no signing account configured");
+    if (!requestUrl) throw new Error("requestUrl required for origin/resource binding");
     const signer = await this.signerPromise;
-    const accepts = challenge.accepts ?? [];
-    if (accepts.length === 0) {
-      throw new Error("Challenge contains no 'accepts' requirements.");
-    }
-
-    const chosenTier = tier ?? this.preferredTier;
-    const targetAmount = TIER_PRICES[chosenTier];
-    const netFiltered = this.preferredNetwork
-      ? accepts.filter((c) => c.network === this.preferredNetwork)
-      : [];
-    const pool = netFiltered.length > 0 ? netFiltered : accepts;
-    let req = pool.find((c) => Number(c.amount) === targetAmount);
-    if (!req && chosenTier === "call") {
-      req = pool.find((c) => Number(c.amount) === 2000);
-    }
-    if (!req) {
-      req = pool.reduce((min, c) => (Number(c.amount) < Number(min.amount) ? c : min));
-    }
-
-    const network = req.network ?? "eip155:8453";
-    const chainId = CHAIN_MAP[network];
-    if (chainId === undefined) {
-      throw new Error(`Unsupported network rail: ${network}`);
-    }
-
-    const extra = req.extra ?? {};
-    const now = Math.floor(Date.now() / 1000);
-    const authorization = {
-      from: signer.address,
-      to: req.payTo,
-      value: Number(req.amount),
-      validAfter: now - 60,
-      validBefore: now + 600,
-      nonce: randomNonce(),
-    };
-    const domain = {
-      name: extra.name ?? "USD Coin",
-      version: String(extra.version ?? "2"),
-      chainId,
-      verifyingContract: req.asset,
-    };
-    const signature = await signer.signTypedData({
-      domain,
-      types: EIP3009_TYPES,
-      primaryType: "TransferWithAuthorization",
-      message: authorization,
-    });
-
-    const payloadAuthorization: Record<string, string> = {
-      from: authorization.from,
-      to: authorization.to,
-      value: String(authorization.value),
-      validAfter: String(authorization.validAfter),
-      validBefore: String(authorization.validBefore),
-      nonce: authorization.nonce,
-    };
-    const payment = {
-      x402Version: challenge.x402Version ?? 2,
-      resource: challenge.resource,
-      accepted: req,
-      payload: { signature, authorization: payloadAuthorization },
-      extensions: challenge.extensions ?? {},
-    };
-    return { payment, header: b64encode(JSON.stringify(payment)) };
+    const {req,amount,index} = this.selectOffer(challenge,requestUrl,tier ?? this.preferredTier);
+    // Reserve synchronously before signer await, including ambiguous signer failures.
+    this.spent[index] += amount;
+    const now = Math.floor(Date.now()/1000), extra = req.extra ?? {};
+    const authorization = {from:signer.address,to:req.payTo,value:amount,validAfter:BigInt(now-60),validBefore:BigInt(now+600),nonce:randomNonce()};
+    const domain = {name:extra.name ?? "USD Coin",version:extra.version ?? "2",chainId:CHAIN_MAP[req.network],verifyingContract:req.asset};
+    const signature = await signer.signTypedData({domain,types:EIP3009_TYPES,primaryType:"TransferWithAuthorization",message:authorization});
+    const payment = {x402Version:challenge.x402Version,resource:challenge.resource,accepted:req,
+      payload:{signature,authorization:{...authorization,value:String(amount),validAfter:String(authorization.validAfter),validBefore:String(authorization.validBefore)}},
+      extensions:challenge.extensions ?? {}};
+    return {payment,header:b64encode(JSON.stringify(payment))};
   }
 
-  /** Execute a request with automatic 402 negotiation and session pass reuse. */
-  public async request(
-    method: string,
-    url: string,
-    data?: unknown,
-    headers?: Record<string, string>,
-    timeoutMs = 30000,
-  ): Promise<X402Response> {
-    const reqHeaders: Record<string, string> = { "Content-Type": "application/json", ...(headers ?? {}) };
-    if (this.isPassActive() && this.cachedPass) {
-      reqHeaders["Authorization"] = `Bearer ${this.cachedPass}`;
-      reqHeaders["X-Session-Pass"] = this.cachedPass;
-    } else if (this.autoAdvance && !reqHeaders["X-WM-Auto-Advance"]) {
-      reqHeaders["X-WM-Auto-Advance"] = "1";
+  private headersFor(url: string, input?: HeadersInit) {
+    const origin = resourceUrl(url).origin, headers = new Headers(input);
+    if (!headers.has("content-type")) headers.set("content-type","application/json");
+    const callerCredentials = CREDENTIALS.some(h=>headers.has(h));
+    if (this.autoLease && !callerCredentials) {
+      if (this.isPassActive(url)) {
+        const token = this.passes.get(origin)!.token;
+        headers.set("authorization",`Bearer ${token}`); headers.set("x-session-pass",token);
+      } else if (this.autoAdvance && !headers.has("x-wm-auto-advance")) headers.set("x-wm-auto-advance","1");
     }
-
-    const body =
-      data === undefined
-        ? undefined
-        : typeof data === "string"
-          ? data
-          : JSON.stringify(data);
-
-    let res = await this.raw(method, url, body, reqHeaders, timeoutMs);
-
-    if (res.status === 402 && this.signerPromise) {
-      const challenge = await this.extractChallenge(res);
-      if (challenge && Array.isArray(challenge.accepts) && challenge.accepts.length > 0) {
-        const { header } = await this.createPaymentPayload(challenge);
-        const retryHeaders = {
-          ...reqHeaders,
-          "PAYMENT-SIGNATURE": header,
-          "X-Lease-Tier": this.preferredTier,
-        };
-        res = await this.raw(method, url, body, retryHeaders, timeoutMs);
+    return {headers,callerCredentials};
+  }
+  private cachePass(url: string, response: Response, callerCredentials: boolean) {
+    if (callerCredentials || !this.autoLease) return;
+    const origin = resourceUrl(url).origin;
+    if ([401,402,403].includes(response.status)) this.passes.delete(origin);
+    if (response.ok) {
+      const token = response.headers.get("x-session-pass"), expiry = response.headers.get("x-session-expires-in");
+      if (token && expiry) {
+        try { this.adoptSessionPass(url,token,expiry,response.headers.get("x-session-tier") ?? this.preferredTier); }
+        catch { this.passes.delete(origin); }
       }
     }
-
-    this.cachePassFromHeaders(res.headers);
-    return res;
+  }
+  private async challenge(response: Response): Promise<X402Challenge | null> {
+    try {
+      const hdr = response.headers.get("payment-required");
+      const body = hdr ? JSON.parse(b64decode(hdr)) : await response.clone().json();
+      return body && Array.isArray(body.accepts) ? body as X402Challenge : null;
+    } catch { return null; }
   }
 
-  /**
-   * fetch()-style wrapper: same negotiation semantics for callers that want
-   * a drop-in replacement for global fetch.
-   */
+  /** At most one 402 retry; redirects are returned without following them. */
   public async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    const headers = new Headers(init?.headers ?? {});
-    if (this.isPassActive() && this.cachedPass) {
-      headers.set("Authorization", `Bearer ${this.cachedPass}`);
-      headers.set("X-Session-Pass", this.cachedPass);
-    }
-
-    let response = await globalThis.fetch(input, { ...init, headers });
-
-    if (response.status === 402 && this.signerPromise) {
-      const challenge = await this.extractChallengeFromResponse(response);
-      if (challenge && Array.isArray(challenge.accepts) && challenge.accepts.length > 0) {
-        const { header } = await this.createPaymentPayload(challenge);
-        const retryHeaders = new Headers(headers);
-        retryHeaders.set("PAYMENT-SIGNATURE", header);
-        retryHeaders.set("X-Lease-Tier", this.preferredTier);
-        response = await globalThis.fetch(input, { ...init, headers: retryHeaders });
+    const original = new Request(input,init);
+    const url = original.url;
+    const {headers,callerCredentials} = this.headersFor(url,original.headers);
+    let response = await globalThis.fetch(new Request(original.clone(),{headers,redirect:"manual"}));
+    this.cachePass(url,response,callerCredentials);
+    if (response.status === 402 && this.autoLease && this.signerPromise && !callerCredentials) {
+      const challenge = await this.challenge(response);
+      if (challenge) {
+        const {header} = await this.createPaymentPayload(challenge,undefined,url);
+        const retry = new Headers(headers);
+        CREDENTIALS.forEach(h=>retry.delete(h));
+        retry.set("payment-signature",header); retry.set("x-lease-tier",this.preferredTier);
+        response = await globalThis.fetch(new Request(original.clone(),{headers:retry,redirect:"manual"}));
+        this.cachePass(url,response,false);
       }
     }
-
-    const headerRecord: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
-      headerRecord[key] = value;
-    });
-    this.cachePassFromHeaders(headerRecord);
     return response;
   }
 
-  private async raw(
-    method: string,
-    url: string,
-    body?: string | Record<string, unknown>,
-    headers?: Record<string, string>,
-    timeoutMs = 30000,
-  ): Promise<X402Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const payload = body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body);
+  public async request(method: string,url: string,data?: unknown,headers?: Record<string,string>,timeoutMs=30000): Promise<X402Response> {
+    const controller = new AbortController(), timer = setTimeout(()=>controller.abort(),timeoutMs);
     try {
-      const response = await globalThis.fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json", ...(headers ?? {}) },
-        body: payload,
-        signal: controller.signal,
-      });
-      const headerRecord: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        headerRecord[key] = value;
-      });
+      const response = await this.fetch(url,{method,headers,body:data === undefined ? undefined : typeof data === "string" ? data : JSON.stringify(data),signal:controller.signal});
       const text = await response.text();
-      let data: Record<string, unknown> = {};
-      try {
-        data = JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        data = { raw: text };
-      }
-      return { status: response.status, data, headers: headerRecord };
-    } finally {
-      clearTimeout(timer);
-    }
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); } catch { parsed = {raw:text}; }
+      const result = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string,unknown> : {value:parsed};
+      const responseHeaders: Record<string,string> = {};
+      response.headers.forEach((v,k)=>{ responseHeaders[k]=v; });
+      return {status:response.status,data:result,headers:responseHeaders};
+    } finally { clearTimeout(timer); }
   }
 
-  private async extractChallenge(res: X402Response): Promise<X402Challenge | null> {
-    const body = res.data as unknown as X402Challenge;
-    if (body && Array.isArray(body.accepts)) return body;
-    const header = res.headers["payment-required"] ?? res.headers["PAYMENT-REQUIRED"];
-    if (header) {
-      try {
-        return JSON.parse(b64decode(header)) as X402Challenge;
-      } catch {
-        return null;
-      }
-    }
-    return null;
+  public async claimFaucet(baseUrl="https://mcp.whitemagic.dev") {
+    const url = baseUrl.replace(/\/$/,"")+"/faucet";
+    const result = await this.request("POST",url,{payer:await this.address() ?? "agent"});
+    if (result.status !== 200) throw new Error(`faucet failed with HTTP ${result.status}`);
+    if (typeof result.data.session_pass === "string") this.adoptSessionPass(url,result.data.session_pass,result.data.expires_in as AtomicAmount ?? 600,"faucet");
+    return result.data;
   }
-
-  private async extractChallengeFromResponse(response: Response): Promise<X402Challenge | null> {
-    const header = response.headers.get("PAYMENT-REQUIRED");
-    if (header) {
-      try {
-        return JSON.parse(b64decode(header)) as X402Challenge;
-      } catch {
-        // fall through to the body
-      }
+  public async notarizeContext(input: NotarizeInput,baseUrl="https://api.whitemagic.dev") {
+    const payload: Record<string,unknown> = {};
+    for (const [field,key] of Object.entries({contextDigest:"context_digest",promptHash:"prompt_hash",action:"action",model:"model",metadata:"metadata"})) {
+      if (input[field as keyof NotarizeInput] !== undefined) payload[key]=input[field as keyof NotarizeInput];
     }
-    try {
-      const clone = response.clone();
-      const body = (await clone.json()) as X402Challenge;
-      if (body && Array.isArray(body.accepts)) return body;
-    } catch {
-      // not JSON
-    }
-    return null;
-  }
-
-  private cachePassFromHeaders(headers: Record<string, string>): void {
-    const sessionPass = headers["x-session-pass"];
-    const expiresIn = headers["x-session-expires-in"];
-    const tier = headers["x-session-tier"];
-    if (sessionPass && expiresIn) {
-      const secs = Number(expiresIn);
-      if (!Number.isNaN(secs)) {
-        this.cachedPass = sessionPass;
-        this.passExpiresAt = Date.now() + secs * 1000;
-        this.passTier = tier ?? this.preferredTier;
-      }
-    }
+    const addr = await this.address(); if (addr) payload.agent_id=addr;
+    const result = await this.request("POST",baseUrl.replace(/\/$/,"")+"/notarize",payload);
+    if (result.status !== 200) throw new Error(`notarization failed with HTTP ${result.status}`);
+    return result.data;
   }
 }
-
-/** Convenience helper mirroring the Python package's `wrap_session`. */
-export function createX402Client(options: X402ClientOptions = {}): X402Client {
-  return new X402Client(options);
-}
+export function createX402Client(options: X402ClientOptions={}) { return new X402Client(options); }
