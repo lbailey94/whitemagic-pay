@@ -1,16 +1,52 @@
 # whitemagic-pay
 
 Python and TypeScript x402 transport clients with caller-owned signing authority and
-origin-scoped opaque session leases. This tree is the **0.2.0 candidate**; it has not
-been published. Existing registry versions do not contain these changes.
+origin-scoped opaque session leases. **0.2.0 is published on PyPI and npm**; earlier
+registry versions do not contain these spending-policy and credential-scope fixes.
 
 A 402 offer does not authorize a spend. No offer is signed without an explicit
 origin/rail/asset/payee/domain grant, exact allowed amount and remaining authorization
 budget. Preferred tier/network select among authorized offers; they never widen a grant.
 
+## Verify the install without a wallet
+
+Try either published package from a scratch directory. The checks below inspect
+an empty client session without sending a request. After downloading the package,
+you can run the checks offline with no wallet key, signing dependency or account.
+
+For Python 3.10 or later, install into a virtual environment:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install 'whitemagic-pay==0.2.0'
+.venv/bin/whitemagic-pay --help
+.venv/bin/python - <<'PY'
+from whitemagic_pay import X402Client
+
+client = X402Client(auto_lease=False)
+print(client.session_status("https://example.invalid")["active"])
+PY
+```
+
+For Node.js 18 or later, install the npm library and check its ESM import:
+
+```sh
+npm install --ignore-scripts --no-audit --no-fund 'whitemagic-pay@0.2.0'
+node --input-type=module - <<'JS'
+import { X402Client } from 'whitemagic-pay';
+
+const client = new X402Client({ autoLease: false });
+console.log(client.sessionStatus('https://example.invalid').active);
+JS
+```
+
+Python prints `False` and Node.js prints `false`, confirming that a new client has
+no cached session pass. The npm library is importable JavaScript with TypeScript
+types. The `whitemagic-pay` CLI above comes from the Python package.
+
 ## Policy-governed requests
 
-From a checkout, build/install the local candidate in an isolated environment. Paid
+Install `whitemagic-pay==0.2.0` from PyPI or `whitemagic-pay@0.2.0` from npm in an isolated environment. Paid
 Python signing additionally needs `eth-account`; TypeScript uses optional `viem`.
 Use your own independently confirmed origin, token contract and recipient below.
 The example addresses are placeholders; they are not WhiteMagic payment instructions.
