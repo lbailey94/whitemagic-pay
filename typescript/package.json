@@ -1,6 +1,6 @@
 {
   "name": "whitemagic-pay",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Autonomous x402 payment client, session lease caching, and Proof-of-Context notarization for AI agents.",
   "license": "MIT",
   "type": "module",

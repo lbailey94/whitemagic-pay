@@ -1,8 +1,8 @@
 # whitemagic-pay
 
 Python and TypeScript x402 transport clients with caller-owned signing authority and
-origin-scoped opaque session leases. **0.2.0 is published on PyPI and npm**; earlier
-registry versions do not contain these spending-policy and credential-scope fixes.
+origin-scoped opaque session leases. **0.2.1** updates the packaged quickstart and
+carries the same client code, spending policy and credential scope as 0.2.0.
 
 A 402 offer does not authorize a spend. No offer is signed without an explicit
 origin/rail/asset/payee/domain grant, exact allowed amount and remaining authorization
@@ -18,7 +18,7 @@ For Python 3.10 or later, install into a virtual environment:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install 'whitemagic-pay==0.2.0'
+.venv/bin/python -m pip install 'whitemagic-pay==0.2.1'
 .venv/bin/whitemagic-pay --help
 .venv/bin/python - <<'PY'
 from whitemagic_pay import X402Client
@@ -31,7 +31,7 @@ PY
 For Node.js 18 or later, install the npm library and check its ESM import:
 
 ```sh
-npm install --ignore-scripts --no-audit --no-fund 'whitemagic-pay@0.2.0'
+npm install --ignore-scripts --no-audit --no-fund 'whitemagic-pay@0.2.1'
 node --input-type=module - <<'JS'
 import { X402Client } from 'whitemagic-pay';
 
@@ -46,7 +46,7 @@ types. The `whitemagic-pay` CLI above comes from the Python package.
 
 ## Policy-governed requests
 
-Install `whitemagic-pay==0.2.0` from PyPI or `whitemagic-pay@0.2.0` from npm in an isolated environment. Paid
+Install `whitemagic-pay==0.2.1` from PyPI or `whitemagic-pay@0.2.1` from npm in an isolated environment. Paid
 Python signing additionally needs `eth-account`; TypeScript uses optional `viem`.
 Use your own independently confirmed origin, token contract and recipient below.
 The example addresses are placeholders; they are not WhiteMagic payment instructions.
